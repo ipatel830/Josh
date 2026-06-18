@@ -1,0 +1,13 @@
+name: josh.ai
+channels:
+  - defaults
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - ipykernel
+  - matplotlib
+  - ffmpeg
+prefix: /opt/anaconda3/envs/josh.ai
