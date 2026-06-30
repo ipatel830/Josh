@@ -1,0 +1,6 @@
+# Ignore these files in data/
+data/processed_test
+data/processed_train
+
+# Ignore these files in model/
+model/4-gram.arpa
