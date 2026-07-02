@@ -16,7 +16,7 @@ class process_data(Dataset):
         self.no_audio = 0
         if train: self.saved_dir_name = 'processed_train'
         else: self.saved_dir_name = 'processed_test'
-        os.makedirs(self.saved_dir_name, exist_ok=True) ###make directory if it doesnt exist##
+        os.makedirs(self.saved_dir_name, exist_ok=True) ### make directory if it doesnt exist##
         self.preprocess()
 
     def preprocess(self):
@@ -59,7 +59,7 @@ class process_data(Dataset):
                             #check .pt file exists with mel spectogram
                             pt_path = f"{self.saved_dir_name}/{idx}.pt"
                             if os.path.exists(pt_path):
-                                sample = torch.load(pt_path)
+                                sample = torch.load(pt_path,weights_only=True)
                                 sample['text'] = text
                                 torch.save(sample,pt_path)
                                 del sample
@@ -72,7 +72,7 @@ class process_data(Dataset):
         files = [f for f in os.listdir(self.saved_dir_name) if f.endswith('.pt')]
         for fname in files:
             pt_path = f'{self.saved_dir_name}/{fname}'
-            sample = torch.load(pt_path)
+            sample = torch.load(pt_path,weights_only=True)
             if 'text' in sample:
                 text = sample['text'].replace(' ', '|')
                 label_ids = tokenizer(text).input_ids
@@ -81,7 +81,6 @@ class process_data(Dataset):
                 del sample
                 
         return self.length_data,self.no_audio
-
 
 
 class LibriSpeechDataset(Dataset):
@@ -120,7 +119,7 @@ def collate_fn(batch):
     }
 
 class SpecAugment(nn.Module):
- 
+
     def __init__(
         self,
         num_freq_masks: int = 2,
@@ -160,7 +159,6 @@ class SpecAugment(nn.Module):
         x = x.permute(0, 2, 1)
         return x
 
-
 class PositionalEncoding(nn.Module):
     def __init__(self,d_model,max_len=5000):
         super().__init__()
@@ -172,8 +170,7 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position/div_term)
         pe[:, 1::2] = torch.cos(position/div_term)
 
-        self.pe = pe.unsqueeze(0)
-        self.register_buffer('pe',pe)
+        self.register_buffer('pe',pe.unsqueeze(0))
 
     def forward(self,x):
         return x + self.pe[:, :x.size(1), :]
