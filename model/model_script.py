@@ -2,39 +2,94 @@
 
 # import dependencies after running environment.yml script #######
 import os
+import sys
 import logging
+import subprocess
 import json
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset,DataLoader
+from torch.utils.data import DataLoader, random_split
 from torch.nn.utils.rnn import pad_sequence
 from transformers import Wav2Vec2CTCTokenizer 
 from torchaudio.models.decoder import ctc_decoder
 from jiwer import wer,cer
-os.chdir('../data/')
-from dataset import collate_fn,LibriSpeechDataset,PositionalEncoding,SpecAugment
-os.chdir('../model/')
-from evaluation import evaluate_batch
+import boto3
 
+## append directories
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(BASE_DIR,'../data'))
+sys.path.append(os.path.join(BASE_DIR,'../model'))
+
+
+from dataset import collate_fn,LibriSpeechDataset,PositionalEncoding,SpecAugment
+from evaluation import evaluate_batch
+from config import bucket_name
+
+
+BUCKET = bucket_name
+s3 = boto3.client('s3')
 
 
 
 logging.basicConfig(level = logging.INFO,
                     format = '%(asctime)s %(message)s',
                     handlers = [
-                        logging.FileHandler('training.log'),
+                        logging.FileHandler(os.path.join(BASE_DIR,'training.log')),
                         logging.StreamHandler()
                         ]
                     )
 log = logging.getLogger(__name__)
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+log.info(f"Using device: {device}")
 
-tokenizer = Wav2Vec2CTCTokenizer.from_pretrained('../data/wav2vec2_tokenizer')
+
+def sync_to_s3(local_path, s3_prefix):
+    """Sync a local folder up to S3."""
+    result = subprocess.run(
+        ['aws', 's3', 'sync', local_path, f's3://{BUCKET}/{s3_prefix}'],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        log.warning(f"S3 sync failed: {result.stderr}")
+    else:
+        log.info(f"Synced {local_path} → s3://{BUCKET}/{s3_prefix}")
+
+def verify_checkpoint(path):
+    """Verify checkpoint file is not corrupted."""
+    try:
+        ckpt = torch.load(path, map_location=device, weights_only=True)
+        required = ['epoch', 'model_state', 'optimizer_state',
+                    'scheduler_state', 'best_wer', 'loss_arr', 'wer_arr', 'cer_arr']
+        for key in required:
+            assert key in ckpt, f"Missing key: {key}"
+        log.info(f"Checkpoint verified — epoch {ckpt['epoch']}, best WER {ckpt['best_wer']:.4f}")
+        return True
+    except Exception as e:
+        log.error(f"Checkpoint verification failed: {e}")
+        return False
+
+data_dir = os.path.join(BASE_DIR,'../data')
+lm_path = os.path.join(BASE_DIR,'lm','4-gram.arpa')
+
+if not os.path.exists(lm_path):
+    log.info("Downloading language model from S3...")
+    s3.download_file(BUCKET,'lm/4-gram.arpa',lm_path)
+    log.info('LM download complete yayy')
+
+ckpt_path = os.path.join(BASE_DIR,'checkpoint.pt')
+if not os.path.exists(ckpt_path):
+    try:
+        log.info('Checking S3 for existing checkpoint...')
+        s3.download_file(BUCKET,'model_outputs/checkpoint.pt',ckpt_path)
+        log.info("Checkpoint restored from S3")
+    except s3.exceptions.ClientError:
+        log.info("No checkpoint found in S3 - starting fresh")
 
 
-from torch.utils.data import random_split
+tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(os.path.join(data_dir,'pro'))
 
-full_dataset = LibriSpeechDataset('../data/processed_train/')
+full_dataset = LibriSpeechDataset(bucket_name=bucket_name,s3_prefix='processed_train/')
 
 train_size = int(0.9 * len(full_dataset))
 val_size   = len(full_dataset) - train_size
@@ -137,15 +192,13 @@ decoder = ctc_decoder(lexicon=None,
 
 ###### Initialize model with parameters and send to device and .compile #######
 
+device = ('cuda' if torch.cuda.is_available() else 'cpu')
 model = S2T(n_mels=80,vocab_size=vocab_size).to(device)
 
 blank_id = tokenizer.pad_token_id
 ctc_loss = nn.CTCLoss(blank=blank_id,zero_infinity=True)
 optimizer = torch.optim.Adam(params=model.parameters(),lr=1e-4)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3)
-
-device = ('cuda' if torch.cuda.is_available() else 'cpu')
-
 
 # resume in case of instance failure
 if os.path.exists('checkpoint.pt'):
@@ -161,17 +214,13 @@ if os.path.exists('checkpoint.pt'):
     log.info(f"Resumed from epoch {start_epoch}")
 else:
     start_epoch = 0
+    loss_arr  = []
+    wer_arr, cer_arr = [], []
+    best_wer  = float('inf')
 
 model = torch.compile(model)
 
-
-
-
-
 nepochs   = 300
-loss_arr  = []
-wer_arr, cer_arr = [], []
-best_wer  = float('inf')
 conv_params = [(3, 2, 1), (3, 2, 1), (3, 2, 1)]
 
 
@@ -215,16 +264,16 @@ for epoch in range(start_epoch,nepochs):
 
         #### save following values in case of EC2 instance failures
 
-        torch.save({
-            'epoch':           epoch,
-            'model_state':     model.state_dict(),
-            'optimizer_state': optimizer.state_dict(),
-            'scheduler_state': scheduler.state_dict(),
-            'best_wer':        best_wer,
-            'loss_arr':        loss_arr,
-            'wer_arr':         wer_arr,
-            'cer_arr':         cer_arr,
-        }, 'checkpoint.pt')
+    torch.save({
+        'epoch':           epoch,
+        'model_state':     model.state_dict(),
+        'optimizer_state': optimizer.state_dict(),
+        'scheduler_state': scheduler.state_dict(),
+        'best_wer':        best_wer,
+        'loss_arr':        loss_arr,
+        'wer_arr':         wer_arr,
+        'cer_arr':         cer_arr,
+    }, 'checkpoint.pt')
 
     avg_loss = batch_loss / len(train_dataloader)
     paired   = [(p, g) for p, g in zip(all_predictions, all_ground_truths) if g.strip()]
@@ -267,13 +316,13 @@ for epoch in range(start_epoch,nepochs):
 
         model.train()
 
-    if (epoch + 1) % 5 == 0:
         with open('metrics.json','w') as f:
             json.dump({
                 'loss':loss_arr,
                 'wer' : wer_arr,
                 'cer' : cer_arr,
             }, f)
+        sync_to_s3(BASE_DIR, 'model_outputs/')
 
     log.info("*" * 41)
     log.info(f"Epoch:     {epoch+1}/{nepochs}")
@@ -282,5 +331,10 @@ for epoch in range(start_epoch,nepochs):
     log.info(f"CER:       {cer_val:.4f}")
     log.info(f"Best WER:  {best_wer:.4f}")
     log.info("_" * 41)
+
+
+log.info("Training complete - final sync to S3...")
+sync_to_s3(BASE_DIR,'model_outputs/')
+log.info("All data synced. Safe to terminate instance")
 
 

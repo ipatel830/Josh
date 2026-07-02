@@ -4,8 +4,8 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 import torch
 import os
-from transformers import Wav2Vec2CTCTokenizer
 from torch.nn.utils.rnn import pad_sequence
+import boto3
 
 
 class process_data(Dataset):
@@ -84,18 +84,34 @@ class process_data(Dataset):
 
 
 class LibriSpeechDataset(Dataset):
-    def __init__(self, processed_dir):
-        self.files = [
-            os.path.join(processed_dir, f)
-            for f in os.listdir(processed_dir)
-            if f.endswith('.pt')
-        ]
+    def __init__(self, bucket_name,s3_prefix):
+        self.bucket_name = bucket_name
+        self.s3_prefix = s3_prefix
+        self.s3 = boto3.client('s3')
+        self.files = self._index_s3()
+
+    def _index_s3(self):
+        keys = []
+        paginator = self.s3.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=self.bucket_name, Prefix=self.s3_prefix)
+        for page in pages:
+            for obj in page.get('Contents',[]):
+                if obj['Key'].endswith('.pt'):
+                    keys.append(obj['Key'])
+
+        return keys
 
     def __len__(self):
         return len(self.files)
 
     def __getitem__(self, idx):
-        data = torch.load(self.files[idx],weights_only=True)
+        import io
+        s3_key = self.files[idx]
+        buffer = io.BytesIO()
+        self.s3.download_fileobj(self.bucket_name,s3_key,buffer)
+        buffer.seek(0)
+
+        data = torch.load(buffer,weights_only=True)
         sample = data['audio']
         data['audio'] = (sample-sample.mean()) / (sample.std() + 1e-8)
         
