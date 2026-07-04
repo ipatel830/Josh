@@ -23,11 +23,7 @@ sys.path.append(os.path.join(BASE_DIR,'../model'))
 
 from dataset import collate_fn,LibriSpeechDataset,PositionalEncoding,SpecAugment
 from evaluation import evaluate_batch
-from config import bucket_name
 
-
-BUCKET = bucket_name
-s3 = boto3.client('s3')
 
 
 
@@ -43,17 +39,6 @@ log = logging.getLogger(__name__)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 log.info(f"Using device: {device}")
 
-
-def sync_to_s3(local_path, s3_prefix):
-    """Sync a local folder up to S3."""
-    result = subprocess.run(
-        ['aws', 's3', 'sync', local_path, f's3://{BUCKET}/{s3_prefix}'],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        log.warning(f"S3 sync failed: {result.stderr}")
-    else:
-        log.info(f"Synced {local_path} → s3://{BUCKET}/{s3_prefix}")
 
 def verify_checkpoint(path):
     """Verify checkpoint file is not corrupted."""
@@ -72,24 +57,10 @@ def verify_checkpoint(path):
 data_dir = os.path.join(BASE_DIR,'../data')
 lm_path = os.path.join(BASE_DIR,'lm','4-gram.arpa')
 
-if not os.path.exists(lm_path):
-    log.info("Downloading language model from S3...")
-    s3.download_file(BUCKET,'lm/4-gram.arpa',lm_path)
-    log.info('LM download complete yayy')
 
-ckpt_path = os.path.join(BASE_DIR,'checkpoint.pt')
-if not os.path.exists(ckpt_path):
-    try:
-        log.info('Checking S3 for existing checkpoint...')
-        s3.download_file(BUCKET,'model_outputs/checkpoint.pt',ckpt_path)
-        log.info("Checkpoint restored from S3")
-    except s3.exceptions.ClientError:
-        log.info("No checkpoint found in S3 - starting fresh")
+tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(os.path.join(data_dir,'wav2vec2_tokenizer'))
 
-
-tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(os.path.join(data_dir,'pro'))
-
-full_dataset = LibriSpeechDataset(bucket_name=bucket_name,s3_prefix='processed_train/')
+full_dataset = LibriSpeechDataset(os.path.join(data_dir, 'processed_train/'))
 
 train_size = int(0.9 * len(full_dataset))
 val_size   = len(full_dataset) - train_size
@@ -185,7 +156,7 @@ vocab[tokenizer.pad_token_id] = "-"
 #### Use a beam decoder + 4-gram model for better path prediction ########
 decoder = ctc_decoder(lexicon=None,
                       tokens=vocab,
-                      lm='4-gram.arpa',
+                      lm=lm_path,
                       beam_size=50,
                       blank_token="-",
                       sil_token="|")
@@ -202,7 +173,7 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3)
 
 # resume in case of instance failure
 if os.path.exists('checkpoint.pt'):
-    ckpt = torch.load('checkpoint.pt', map_location=device)
+    ckpt = torch.load('checkpoint.pt', map_location=device,weights_only=True)
     model.load_state_dict(ckpt['model_state'])
     optimizer.load_state_dict(ckpt['optimizer_state'])
     scheduler.load_state_dict(ckpt['scheduler_state'])
@@ -322,7 +293,6 @@ for epoch in range(start_epoch,nepochs):
                 'wer' : wer_arr,
                 'cer' : cer_arr,
             }, f)
-        sync_to_s3(BASE_DIR, 'model_outputs/')
 
     log.info("*" * 41)
     log.info(f"Epoch:     {epoch+1}/{nepochs}")
@@ -333,8 +303,6 @@ for epoch in range(start_epoch,nepochs):
     log.info("_" * 41)
 
 
-log.info("Training complete - final sync to S3...")
-sync_to_s3(BASE_DIR,'model_outputs/')
-log.info("All data synced. Safe to terminate instance")
+log.info("Training complete - everything si saved...")
 
 
