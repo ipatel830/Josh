@@ -73,7 +73,7 @@ train_dataset, val_dataset = random_split(
 
 train_dataloader = DataLoader(
     train_dataset, 
-    batch_size=32, 
+    batch_size=80, 
     shuffle=True, 
     collate_fn=collate_fn,
     num_workers=4,
@@ -168,7 +168,7 @@ model = S2T(n_mels=80,vocab_size=vocab_size).to(device)
 
 blank_id = tokenizer.pad_token_id
 ctc_loss = nn.CTCLoss(blank=blank_id,zero_infinity=True)
-optimizer = torch.optim.Adam(params=model.parameters(),lr=1e-4)
+optimizer = torch.optim.Adam(params=model.parameters(),lr=3e-4)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3)
 
 # resume in case of instance failure
@@ -232,6 +232,10 @@ for epoch in range(start_epoch,nepochs):
         preds, gts = evaluate_batch(logits, batch['labels'], tokenizer)
         all_predictions.extend(preds)
         all_ground_truths.extend(gts)
+
+        if all_predictions:
+            log.info(f"Sample pred: {all_predictions[0][:80]}")
+            log.info(f"Sample true: {all_ground_truths[0][:80]}")
 
         #### save following values in case of EC2 instance failures
 
