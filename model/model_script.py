@@ -233,9 +233,9 @@ for epoch in range(start_epoch,nepochs):
         all_predictions.extend(preds)
         all_ground_truths.extend(gts)
 
-        if all_predictions:
-            log.info(f"Sample pred: {all_predictions[0][:80]}")
-            log.info(f"Sample true: {all_ground_truths[0][:80]}")
+    if all_predictions:
+        log.info(f"Sample pred: {all_predictions[0][:80]}")
+        log.info(f"Sample true: {all_ground_truths[0][:80]}")
 
         #### save following values in case of EC2 instance failures
 
@@ -274,7 +274,8 @@ for epoch in range(start_epoch,nepochs):
                 results   = decoder(log_probs.cpu())
 
                 for hyps in results:
-                    text = " ".join(hyps[0].words).strip().lower()
+                    tokens = decoder.idxs_to_tokens(hyps[0].tokens)
+                    text = "".join(tokens).replace("|", " ").replace("-", "").strip().lower()
                     beam_preds.append(text)
 
                 _, gts = evaluate_batch(logits, batch['labels'], tokenizer)
@@ -307,6 +308,6 @@ for epoch in range(start_epoch,nepochs):
     log.info("_" * 41)
 
 
-log.info("Training complete - everything si saved...")
+log.info("Training complete - everything is saved...")
 
 
