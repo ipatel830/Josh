@@ -1,8 +1,7 @@
 import utils as u
 import torch
 import torchaudio
-from torchcrf import CRF
-from torchaudio.models.decoder import ctc_decoder
+from pyctcdecode import build_ctcdecoder
 from transformers import Wav2Vec2CTCTokenizer 
 
 
@@ -14,14 +13,14 @@ class VoiceAssistantPipeline:
         vocab = [None] * len(self.tokenizer)
         for token, idx in self.tokenizer.get_vocab().items():
             vocab[idx] = token
-        vocab[self.tokenizer.pad_token_id] = "-"
-        vocab_size = len(vocab)
-        self.decoder = ctc_decoder(lexicon=None,
-                      tokens=vocab,
-                      lm = kenlm_path,
-                      beam_size=50,
-                      blank_token="-",
-                      sil_token="|")
+        vocab[self.tokenizer.pad_token_id] = ""
+        vocab_size = self.tokenizer.vocab_size
+        self.decoder = build_ctcdecoder(
+            labels=vocab,
+            kenlm_model_path=kenlm_path,
+            alpha=0.5,
+            beta=1.0,
+        )
         # --- STT side ---
         self.stt_model = u.S2T(n_mels=80,vocab_size=vocab_size)
         self.stt_model.load_state_dict(torch.load(stt_path,map_location=self.device))
@@ -46,10 +45,10 @@ class VoiceAssistantPipeline:
         mel_spec = u.STM(audio,sample_rate)
         with torch.no_grad():
             logits = self.stt_model(mel_spec.float().to(self.device))
-        log_probs = torch.nn.functional.log_softmax(logits,dim=-1).detach().cpu()
-        results = self.decoder(log_probs)
-        text = " ".join(results[0][0].words).strip().lower()
-        return text
+        log_probs = torch.nn.functional.log_softmax(logits,dim=-1)
+        log_probs_np = log_probs.squeeze(0).detach().cpu().numpy()
+        text = self.decoder.decode(log_probs_np)
+        return text.strip().lower()
 
     def understand(self, text: str) -> dict:
         tokens = text.strip().split()
