@@ -3,3 +3,6 @@ model/4-gram.arpa
 
 # Ignore these files in data/
 data/config.py
+
+
+STT/best_model.pt
