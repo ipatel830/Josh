@@ -36,7 +36,7 @@ os.chdir('../data/')
 from dataset import collate_fn,LibriSpeechDataset,PositionalEncoding,SpecAugment
 os.chdir('../model/')
 >>>>>>> main
-from evaluation import evaluate_batch
+from Josh.STT.model.evaluation import evaluate_batch
 
 
 

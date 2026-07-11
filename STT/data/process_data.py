@@ -1,6 +1,6 @@
 import os
 import boto3
-from dataset import process_data
+from Josh.STT.data.dataset import process_data
 from transformers import Wav2Vec2CTCTokenizer
 from config import bucket_name
 
