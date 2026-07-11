@@ -4,3 +4,6 @@ data/processed_train
 
 # Ignore these files in model/
 model/4-gram.arpa
+
+nlu/data/snips_processed
+nlu/data/snips
