@@ -4,8 +4,13 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 import torch
 import os
+<<<<<<< HEAD
 from torch.nn.utils.rnn import pad_sequence
 import boto3
+=======
+from transformers import Wav2Vec2CTCTokenizer
+from torch.nn.utils.rnn import pad_sequence
+>>>>>>> main
 
 
 class process_data(Dataset):
@@ -16,7 +21,11 @@ class process_data(Dataset):
         self.no_audio = 0
         if train: self.saved_dir_name = 'processed_train'
         else: self.saved_dir_name = 'processed_test'
+<<<<<<< HEAD
         os.makedirs(self.saved_dir_name, exist_ok=True) ### make directory if it doesnt exist##
+=======
+        os.makedirs(self.saved_dir_name, exist_ok=True) ###make directory if it doesnt exist##
+>>>>>>> main
         self.preprocess()
 
     def preprocess(self):
@@ -59,7 +68,11 @@ class process_data(Dataset):
                             #check .pt file exists with mel spectogram
                             pt_path = f"{self.saved_dir_name}/{idx}.pt"
                             if os.path.exists(pt_path):
+<<<<<<< HEAD
                                 sample = torch.load(pt_path,weights_only=True)
+=======
+                                sample = torch.load(pt_path)
+>>>>>>> main
                                 sample['text'] = text
                                 torch.save(sample,pt_path)
                                 del sample
@@ -72,7 +85,11 @@ class process_data(Dataset):
         files = [f for f in os.listdir(self.saved_dir_name) if f.endswith('.pt')]
         for fname in files:
             pt_path = f'{self.saved_dir_name}/{fname}'
+<<<<<<< HEAD
             sample = torch.load(pt_path,weights_only=True)
+=======
+            sample = torch.load(pt_path)
+>>>>>>> main
             if 'text' in sample:
                 text = sample['text'].replace(' ', '|')
                 label_ids = tokenizer(text).input_ids
@@ -83,6 +100,10 @@ class process_data(Dataset):
         return self.length_data,self.no_audio
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> main
 class LibriSpeechDataset(Dataset):
     def __init__(self, processed_dir):
         self.files = [
@@ -95,9 +116,16 @@ class LibriSpeechDataset(Dataset):
         return len(self.files)
 
     def __getitem__(self, idx):
+<<<<<<< HEAD
         data   = torch.load(self.files[idx], weights_only=True)
         sample = data['audio']
         data['audio'] = (sample - sample.mean()) / (sample.std() + 1e-8)
+=======
+        data = torch.load(self.files[idx],weights_only=True)
+        sample = data['audio']
+        data['audio'] = (sample-sample.mean()) / (sample.std() + 1e-8)
+        
+>>>>>>> main
         return data
 
 def collate_fn(batch):
@@ -118,7 +146,11 @@ def collate_fn(batch):
     }
 
 class SpecAugment(nn.Module):
+<<<<<<< HEAD
 
+=======
+ 
+>>>>>>> main
     def __init__(
         self,
         num_freq_masks: int = 2,
@@ -158,6 +190,10 @@ class SpecAugment(nn.Module):
         x = x.permute(0, 2, 1)
         return x
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> main
 class PositionalEncoding(nn.Module):
     def __init__(self,d_model,max_len=5000):
         super().__init__()
@@ -169,7 +205,15 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position/div_term)
         pe[:, 1::2] = torch.cos(position/div_term)
 
+<<<<<<< HEAD
         self.register_buffer('pe',pe.unsqueeze(0))
 
     def forward(self,x):
         return x + self.pe[:, :x.size(1), :]
+=======
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe',pe)
+
+    def forward(self,x):
+        return x+self.pe[:, :x.size(1), :]
+>>>>>>> main

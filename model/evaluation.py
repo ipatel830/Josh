@@ -1,5 +1,11 @@
 import torch
+<<<<<<< HEAD
  
+=======
+from jiwer import wer, cer
+ 
+
+>>>>>>> main
  
 def ctc_collapse(token_ids: list[int], blank_id: int) -> list[int]:
 

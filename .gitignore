@@ -1,8 +1,18 @@
+
 # Ignore these files in model/
 model/4-gram.arpa
 
 # Ignore these files in data/
 data/config.py
 
-
 STT/best_model.pt
+
+# Ignore these files in data/
+data/processed_test
+data/processed_train
+
+# Ignore these files in model/
+model/4-gram.arpa
+
+nlu/data/
+

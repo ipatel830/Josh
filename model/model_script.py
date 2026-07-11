@@ -2,6 +2,7 @@
 
 # import dependencies after running environment.yml script #######
 import os
+<<<<<<< HEAD
 import sys
 import logging
 import subprocess
@@ -9,10 +10,18 @@ import json
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
+=======
+import logging
+import json
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset,DataLoader
+>>>>>>> main
 from torch.nn.utils.rnn import pad_sequence
 from transformers import Wav2Vec2CTCTokenizer 
 from torchaudio.models.decoder import ctc_decoder
 from jiwer import wer,cer
+<<<<<<< HEAD
 import boto3
 
 ## append directories
@@ -22,6 +31,11 @@ sys.path.append(os.path.join(BASE_DIR,'../model'))
 
 
 from dataset import collate_fn,LibriSpeechDataset,PositionalEncoding,SpecAugment
+=======
+os.chdir('../data/')
+from dataset import collate_fn,LibriSpeechDataset,PositionalEncoding,SpecAugment
+os.chdir('../model/')
+>>>>>>> main
 from evaluation import evaluate_batch
 
 
@@ -30,12 +44,17 @@ from evaluation import evaluate_batch
 logging.basicConfig(level = logging.INFO,
                     format = '%(asctime)s %(message)s',
                     handlers = [
+<<<<<<< HEAD
                         logging.FileHandler(os.path.join(BASE_DIR,'training.log')),
+=======
+                        logging.FileHandler('training.log'),
+>>>>>>> main
                         logging.StreamHandler()
                         ]
                     )
 log = logging.getLogger(__name__)
 
+<<<<<<< HEAD
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 log.info(f"Using device: {device}")
 
@@ -61,6 +80,15 @@ lm_path = os.path.join(BASE_DIR,'lm','4-gram.arpa')
 tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(os.path.join(data_dir,'wav2vec2_tokenizer'))
 
 full_dataset = LibriSpeechDataset(os.path.join(data_dir, 'processed_train/'))
+=======
+
+tokenizer = Wav2Vec2CTCTokenizer.from_pretrained('../data/wav2vec2_tokenizer')
+
+
+from torch.utils.data import random_split
+
+full_dataset = LibriSpeechDataset('../data/processed_train/')
+>>>>>>> main
 
 train_size = int(0.9 * len(full_dataset))
 val_size   = len(full_dataset) - train_size
@@ -73,7 +101,11 @@ train_dataset, val_dataset = random_split(
 
 train_dataloader = DataLoader(
     train_dataset, 
+<<<<<<< HEAD
     batch_size=80, 
+=======
+    batch_size=32, 
+>>>>>>> main
     shuffle=True, 
     collate_fn=collate_fn,
     num_workers=4,
@@ -156,24 +188,43 @@ vocab[tokenizer.pad_token_id] = "-"
 #### Use a beam decoder + 4-gram model for better path prediction ########
 decoder = ctc_decoder(lexicon=None,
                       tokens=vocab,
+<<<<<<< HEAD
                       lm=lm_path,
+=======
+                      lm='4-gram.arpa',
+>>>>>>> main
                       beam_size=50,
                       blank_token="-",
                       sil_token="|")
 
 ###### Initialize model with parameters and send to device and .compile #######
 
+<<<<<<< HEAD
 device = ('cuda' if torch.cuda.is_available() else 'cpu')
+=======
+>>>>>>> main
 model = S2T(n_mels=80,vocab_size=vocab_size).to(device)
 
 blank_id = tokenizer.pad_token_id
 ctc_loss = nn.CTCLoss(blank=blank_id,zero_infinity=True)
+<<<<<<< HEAD
 optimizer = torch.optim.Adam(params=model.parameters(),lr=3e-4)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3)
 
 # resume in case of instance failure
 if os.path.exists('checkpoint.pt'):
     ckpt = torch.load('checkpoint.pt', map_location=device,weights_only=True)
+=======
+optimizer = torch.optim.Adam(params=model.parameters(),lr=1e-4)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3)
+
+device = ('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+# resume in case of instance failure
+if os.path.exists('checkpoint.pt'):
+    ckpt = torch.load('checkpoint.pt', map_location=device)
+>>>>>>> main
     model.load_state_dict(ckpt['model_state'])
     optimizer.load_state_dict(ckpt['optimizer_state'])
     scheduler.load_state_dict(ckpt['scheduler_state'])
@@ -185,6 +236,7 @@ if os.path.exists('checkpoint.pt'):
     log.info(f"Resumed from epoch {start_epoch}")
 else:
     start_epoch = 0
+<<<<<<< HEAD
     loss_arr  = []
     wer_arr, cer_arr = [], []
     best_wer  = float('inf')
@@ -192,6 +244,19 @@ else:
 model = torch.compile(model)
 
 nepochs   = 300
+=======
+
+model = torch.compile(model)
+
+
+
+
+
+nepochs   = 300
+loss_arr  = []
+wer_arr, cer_arr = [], []
+best_wer  = float('inf')
+>>>>>>> main
 conv_params = [(3, 2, 1), (3, 2, 1), (3, 2, 1)]
 
 
@@ -233,6 +298,7 @@ for epoch in range(start_epoch,nepochs):
         all_predictions.extend(preds)
         all_ground_truths.extend(gts)
 
+<<<<<<< HEAD
     if all_predictions:
         log.info(f"Sample pred: {all_predictions[0][:80]}")
         log.info(f"Sample true: {all_ground_truths[0][:80]}")
@@ -249,6 +315,20 @@ for epoch in range(start_epoch,nepochs):
         'wer_arr':         wer_arr,
         'cer_arr':         cer_arr,
     }, 'checkpoint.pt')
+=======
+        #### save following values in case of EC2 instance failures
+
+        torch.save({
+            'epoch':           epoch,
+            'model_state':     model.state_dict(),
+            'optimizer_state': optimizer.state_dict(),
+            'scheduler_state': scheduler.state_dict(),
+            'best_wer':        best_wer,
+            'loss_arr':        loss_arr,
+            'wer_arr':         wer_arr,
+            'cer_arr':         cer_arr,
+        }, 'checkpoint.pt')
+>>>>>>> main
 
     avg_loss = batch_loss / len(train_dataloader)
     paired   = [(p, g) for p, g in zip(all_predictions, all_ground_truths) if g.strip()]
@@ -274,8 +354,12 @@ for epoch in range(start_epoch,nepochs):
                 results   = decoder(log_probs.cpu())
 
                 for hyps in results:
+<<<<<<< HEAD
                     tokens = decoder.idxs_to_tokens(hyps[0].tokens)
                     text = "".join(tokens).replace("|", " ").replace("-", "").strip().lower()
+=======
+                    text = " ".join(hyps[0].words).strip().lower()
+>>>>>>> main
                     beam_preds.append(text)
 
                 _, gts = evaluate_batch(logits, batch['labels'], tokenizer)
@@ -292,6 +376,10 @@ for epoch in range(start_epoch,nepochs):
 
         model.train()
 
+<<<<<<< HEAD
+=======
+    if (epoch + 1) % 5 == 0:
+>>>>>>> main
         with open('metrics.json','w') as f:
             json.dump({
                 'loss':loss_arr,
@@ -308,6 +396,9 @@ for epoch in range(start_epoch,nepochs):
     log.info("_" * 41)
 
 
+<<<<<<< HEAD
 log.info("Training complete - everything is saved...")
 
 
+=======
+>>>>>>> main
