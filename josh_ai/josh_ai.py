@@ -1,4 +1,5 @@
 import utils as u
+import json
 import torch
 import torchaudio
 from pyctcdecode import build_ctcdecoder
@@ -7,29 +8,37 @@ from transformers import Wav2Vec2CTCTokenizer
 
 
 class VoiceAssistantPipeline:
-    def __init__(self, stt_path,stt_tokenizer, nlu_path, kenlm_path, device='cuda'):
-        self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
-        self.tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(stt_tokenizer)
-        vocab = [None] * len(self.tokenizer)
-        for token, idx in self.tokenizer.get_vocab().items():
+    def __init__(self, stt_path, nlu_path, kenlm_path):
+        self.device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+        self.tokenizer = Wav2Vec2CTCTokenizer.from_pretrained('../STT/data/wav2vec2_tokenizer')
+
+        with open('../STT/data/wav2vec2_tokenizer/vocab.json') as f:
+            self.raw_vocab = json.load(f)
+
+        vocab_size = len(self.raw_vocab)
+        vocab = [None] * vocab_size
+        for token, idx in self.raw_vocab.items():
             vocab[idx] = token
-        vocab[self.tokenizer.pad_token_id] = ""
-        vocab_size = self.tokenizer.vocab_size
+
+        pad_id = self.raw_vocab['[PAD]']
+        vocab[pad_id] = ""
+
         self.decoder = build_ctcdecoder(
             labels=vocab,
             kenlm_model_path=kenlm_path,
             alpha=0.5,
             beta=1.0,
         )
+
         # --- STT side ---
-        self.stt_model = u.S2T(n_mels=80,vocab_size=vocab_size)
+        self.stt_model = u.S2T(n_mels=80, vocab_size=vocab_size)
         self.stt_model.load_state_dict(torch.load(stt_path,map_location=self.device))
         self.stt_model.to(self.device)
         self.stt_model.eval()
         # --- NLU side ---
-        self.word2idx, _ = u._load_dictionary('nlu/data/snips_processed/word2idx.json')
-        self.slot2idx, self.idx2slot = u._load_dictionary('nlu/data/snips_processed/slot2idx.json')
-        self.intent2idx, self.idx2intent = u._load_dictionary('nlu/data/snips_processed/intent2idx.json')
+        self.word2idx, _ = u._load_dictionary('../nlu/data/snips_processed/word2idx.json')
+        self.slot2idx, self.idx2slot = u._load_dictionary('../nlu/data/snips_processed/slot2idx.json')
+        self.intent2idx, self.idx2intent = u._load_dictionary('../nlu/data/snips_processed/intent2idx.json')
         self.nlu_model = u.JointIntentSlotModel(vocab_size=len(self.word2idx), 
                                                 num_slots=len(self.slot2idx),
                                                 num_intents=len(self.intent2idx),
@@ -39,16 +48,30 @@ class VoiceAssistantPipeline:
 
     def transcribe(self, audio_path) -> str:
         audio, sample_rate = torchaudio.load(audio_path)
-        if sample_rate != 16000:
-            audio = torchaudio.functional.resample(audio,sample_rate,16000)
-            sample_rate = 16000
-        mel_spec = u.STM(audio,sample_rate)
+        print('raw audio shape:', audio.shape, 'sample_rate:', sample_rate)
+
+        if audio.shape[0] > 1:
+            audio = audio.mean(dim=0, keepdim=True)
+            print('after mono fix:', audio.shape)
+        target_sr = 16000
+        if sample_rate != target_sr:
+            audio = torchaudio.functional.resample(audio, sample_rate, target_sr)
+            sample_rate = target_sr
+
+        mel_spec = u.STM(audio, sample_rate)
+        mel_spec = mel_spec.transpose(1,2)
+        mel_spec = (mel_spec - mel_spec.mean()) / (mel_spec.std() + 1e-8)
+
+
         with torch.no_grad():
             logits = self.stt_model(mel_spec.float().to(self.device))
-        log_probs = torch.nn.functional.log_softmax(logits,dim=-1)
+        print('logits shape:', logits.shape)
+
+        log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
         log_probs_np = log_probs.squeeze(0).detach().cpu().numpy()
         text = self.decoder.decode(log_probs_np)
-        return text.strip().lower()
+
+        return text.lower()
 
     def understand(self, text: str) -> dict:
         tokens = text.strip().split()
@@ -89,7 +112,7 @@ class VoiceAssistantPipeline:
 
         return {'intent': intent, 'slots': slots}
 
-    def run(self, audio) -> dict:
+    def run(self, audio):
         text = self.transcribe(audio)
         result = self.understand(text)
         result['transcription'] = text
