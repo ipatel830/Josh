@@ -5,7 +5,7 @@ STT/data/config.py
 STT/best_model.pt
 STT/data/processed_test
 STT/data/processed_train
-STT/model/4-gram.arpa
+josh_ai/4-gram.arpa
 
 nlu/data/snips
 nlu/data/snips_processed
