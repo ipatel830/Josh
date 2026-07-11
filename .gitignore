@@ -11,6 +11,6 @@ nlu/data/snips
 nlu/data/snips_processed
 nlu/data/nlu_metrics
 
-nlu/nlu_crf_best.pt
+
 nlu/nlu.pt
 
