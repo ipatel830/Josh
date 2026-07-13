@@ -1,5 +1,4 @@
 import utils as u
-import json
 import torch
 import torchaudio
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
@@ -8,16 +7,16 @@ from transformers import WhisperProcessor, WhisperForConditionalGeneration
 class VoiceAssistantPipeline:
     def __init__(self, whisper_path, nlu_path):
 
-        self.device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+        self.device = torch.device('cpu')
         self.whisper_processor = WhisperProcessor.from_pretrained(whisper_path)
         self.whisper_model = WhisperForConditionalGeneration.from_pretrained(whisper_path)
         self.whisper_model.to(self.device)
         self.whisper_model.eval()
 
         # --- NLU side ---
-        self.word2idx, _ = u._load_dictionary('models/nlu_dependencies/word2idx.json')
-        self.slot2idx, self.idx2slot = u._load_dictionary('models/nlu_dependencies/slot2idx.json')
-        self.intent2idx, self.idx2intent = u._load_dictionary('models/nlu_dependencies/intent2idx.json')
+        self.word2idx, _ = u._load_dictionary('nlu/data/word2idx.json')
+        self.slot2idx, self.idx2slot = u._load_dictionary('nlu/data/slot2idx.json')
+        self.intent2idx, self.idx2intent = u._load_dictionary('nlu/data/intent2idx.json')
         self.nlu_model = u.JointIntentSlotModel(vocab_size=len(self.word2idx), 
                                                 num_slots=len(self.slot2idx),
                                                 num_intents=len(self.intent2idx),

@@ -1,0 +1,15 @@
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+**/*.ipynb
+**/nlu.pt
+**/data/snips/
+**/data/snips_processed/*.jsonl
+**/nlu_metrics/
+**/*.arpa
+**/*.flac
+**/*.m4a
+train.py
+test.py
+.git
+.gitignore
