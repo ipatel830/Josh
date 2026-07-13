@@ -2,43 +2,22 @@ import utils as u
 import json
 import torch
 import torchaudio
-from pyctcdecode import build_ctcdecoder
-from transformers import Wav2Vec2CTCTokenizer 
-
+from transformers import WhisperProcessor, WhisperForConditionalGeneration
 
 
 class VoiceAssistantPipeline:
-    def __init__(self, stt_path, nlu_path, kenlm_path):
+    def __init__(self, whisper_path, nlu_path):
+
         self.device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
-        self.tokenizer = Wav2Vec2CTCTokenizer.from_pretrained('../STT/data/wav2vec2_tokenizer')
+        self.whisper_processor = WhisperProcessor.from_pretrained(whisper_path)
+        self.whisper_model = WhisperForConditionalGeneration.from_pretrained(whisper_path)
+        self.whisper_model.to(self.device)
+        self.whisper_model.eval()
 
-        with open('../STT/data/wav2vec2_tokenizer/vocab.json') as f:
-            self.raw_vocab = json.load(f)
-
-        vocab_size = len(self.raw_vocab)
-        vocab = [None] * vocab_size
-        for token, idx in self.raw_vocab.items():
-            vocab[idx] = token
-
-        pad_id = self.raw_vocab['[PAD]']
-        vocab[pad_id] = ""
-
-        self.decoder = build_ctcdecoder(
-            labels=vocab,
-            kenlm_model_path=kenlm_path,
-            alpha=0.5,
-            beta=1.0,
-        )
-
-        # --- STT side ---
-        self.stt_model = u.S2T(n_mels=80, vocab_size=vocab_size)
-        self.stt_model.load_state_dict(torch.load(stt_path,map_location=self.device))
-        self.stt_model.to(self.device)
-        self.stt_model.eval()
         # --- NLU side ---
-        self.word2idx, _ = u._load_dictionary('../nlu/data/snips_processed/word2idx.json')
-        self.slot2idx, self.idx2slot = u._load_dictionary('../nlu/data/snips_processed/slot2idx.json')
-        self.intent2idx, self.idx2intent = u._load_dictionary('../nlu/data/snips_processed/intent2idx.json')
+        self.word2idx, _ = u._load_dictionary('models/nlu_dependencies/word2idx.json')
+        self.slot2idx, self.idx2slot = u._load_dictionary('models/nlu_dependencies/slot2idx.json')
+        self.intent2idx, self.idx2intent = u._load_dictionary('models/nlu_dependencies/intent2idx.json')
         self.nlu_model = u.JointIntentSlotModel(vocab_size=len(self.word2idx), 
                                                 num_slots=len(self.slot2idx),
                                                 num_intents=len(self.intent2idx),
@@ -48,30 +27,25 @@ class VoiceAssistantPipeline:
 
     def transcribe(self, audio_path) -> str:
         audio, sample_rate = torchaudio.load(audio_path)
-        print('raw audio shape:', audio.shape, 'sample_rate:', sample_rate)
 
         if audio.shape[0] > 1:
             audio = audio.mean(dim=0, keepdim=True)
-            print('after mono fix:', audio.shape)
+
         target_sr = 16000
         if sample_rate != target_sr:
             audio = torchaudio.functional.resample(audio, sample_rate, target_sr)
             sample_rate = target_sr
 
-        mel_spec = u.STM(audio, sample_rate)
-        mel_spec = mel_spec.transpose(1,2)
-        mel_spec = (mel_spec - mel_spec.mean()) / (mel_spec.std() + 1e-8)
+        audio_np = audio.squeeze(0).numpy()
 
+        inputs = self.whisper_processor(audio_np, sampling_rate=target_sr, return_tensors="pt")
+        input_features = inputs.input_features.to(self.device)
 
         with torch.no_grad():
-            logits = self.stt_model(mel_spec.float().to(self.device))
-        print('logits shape:', logits.shape)
+            predicted_ids = self.whisper_model.generate(input_features, num_beams=1)  # num_beams=1 = greedy
 
-        log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
-        log_probs_np = log_probs.squeeze(0).detach().cpu().numpy()
-        text = self.decoder.decode(log_probs_np)
-
-        return text.lower()
+        text = self.whisper_processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+        return text.strip().lower()
 
     def understand(self, text: str) -> dict:
         tokens = text.strip().split()

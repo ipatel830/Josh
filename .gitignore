@@ -1,11 +1,8 @@
-STT/data/config.py
 STT/best_model.pt
 STT/data/processed_test
 STT/data/processed_train
+STT/data/wav2vec2_tokenizer
 STT/model/4-gram.arpa
-nlu/data/snips/
-nlu/data/snips_processed/train.jsonl
-nlu/data/snips_processed/valid.jsonl
-nlu/data/snips_processed/test.jsonl
-nlu/data/nlu_metrics
-nlu/nlu.pt
+nlu/data/
+nlu/nlu_metrics
+josh_test_data/

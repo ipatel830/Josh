@@ -1,14 +1,13 @@
 import josh_ai as j_ai
 
 
-stt_path = '../STT/best_model.pt'
-nlu_path = '../nlu/nlu_crf_best.pt'
-kenlm_path = '../STT/model/4-gram.arpa'
+whisper_path = 'models/whisper-tiny-local/'
+nlu_path = 'models/nlu_model.pt'
 
-assistant = j_ai.VoiceAssistantPipeline(stt_path,nlu_path,kenlm_path)
+assistant = j_ai.VoiceAssistantPipeline(whisper_path,nlu_path)
 
 
-audio_path = 'data/ishan.m4a'
+audio_path = '../josh_test_data/mahi.m4a'
 
 output = assistant.run(audio_path)
 print(output)
