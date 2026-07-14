@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import numpy as np
 import torch
 from transformers import (
     SpeechT5Processor,
@@ -17,9 +18,7 @@ tts_processor = SpeechT5Processor.from_pretrained("microsoft/speecht5_tts")
 tts_model = SpeechT5ForTextToSpeech.from_pretrained("microsoft/speecht5_tts").to(DEVICE)
 vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan").to(DEVICE)
 
-
 whisper_fe = WhisperFeatureExtractor.from_pretrained("openai/whisper-tiny")
-
 
 embeddings_dataset = load_dataset("Matthijs/cmu-arctic-xvectors", split="validation")
 NUM_SPEAKERS = len(embeddings_dataset)
@@ -56,6 +55,45 @@ def build_target_string(tokens, slot_tags, intent):
     return target
 
 
+def add_gaussian_noise(speech, snr_db):
+
+    signal_power = np.mean(speech ** 2)
+    noise_power = signal_power / (10 ** (snr_db / 10))
+    noise = np.random.normal(0, np.sqrt(noise_power), speech.shape)
+    return speech + noise
+
+
+def apply_simple_reverb(speech, decay=0.3, delay_samples=800):
+    reverb = np.zeros_like(speech)
+    if delay_samples < len(speech):
+        reverb[delay_samples:] = speech[:-delay_samples] * decay
+    return speech + reverb
+
+
+def random_gain(speech, min_db=-6, max_db=6):
+    gain_db = random.uniform(min_db, max_db)
+    gain_factor = 10 ** (gain_db / 20)
+    return speech * gain_factor
+
+
+def augment_audio(speech_np):
+    if random.random() < 0.7:
+        snr = random.uniform(5, 25)  # random noise severity
+        speech_np = add_gaussian_noise(speech_np, snr_db=snr)
+
+    if random.random() < 0.4:
+        speech_np = apply_simple_reverb(speech_np)
+
+    if random.random() < 0.5:
+        speech_np = random_gain(speech_np)
+
+    max_val = np.max(np.abs(speech_np))
+    if max_val > 1.0:
+        speech_np = speech_np / max_val
+
+    return speech_np.astype(np.float32)
+
+
 def synthesize_split(jsonl_path, out_dir, limit=None):
     os.makedirs(out_dir, exist_ok=True)
 
@@ -82,11 +120,13 @@ def synthesize_split(jsonl_path, out_dir, limit=None):
             )
 
         speech_np = speech.cpu().numpy()
+        speech_np = augment_audio(speech_np)
 
 
         mel_features = whisper_fe(
             speech_np, sampling_rate=16000, return_tensors="pt"
         ).input_features.squeeze(0)  # shape: [n_mels, 3000] -- Whisper's fixed 30s window
+
 
         sample_dir = os.path.join(out_dir, str(i))
         os.makedirs(sample_dir, exist_ok=True)
