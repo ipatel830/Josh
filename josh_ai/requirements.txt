@@ -6,3 +6,4 @@ pytorch-crf
 fastapi
 uvicorn
 python-multipart
+torchcodec
