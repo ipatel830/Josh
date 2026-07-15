@@ -11,12 +11,12 @@ from transformers import (
 )
 from datasets import load_dataset
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print("Loading SpeechT5 models...")
 tts_processor = SpeechT5Processor.from_pretrained("microsoft/speecht5_tts")
-tts_model = SpeechT5ForTextToSpeech.from_pretrained("microsoft/speecht5_tts").to(DEVICE)
-vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan").to(DEVICE)
+tts_model = SpeechT5ForTextToSpeech.from_pretrained("microsoft/speecht5_tts").to(device)
+vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan").to(device)
 
 whisper_fe = WhisperFeatureExtractor.from_pretrained("openai/whisper-tiny")
 
@@ -26,7 +26,7 @@ NUM_SPEAKERS = len(embeddings_dataset)
 
 def random_speaker_embedding():
     idx = random.randint(0, NUM_SPEAKERS - 1)
-    return torch.tensor(embeddings_dataset[idx]["xvector"]).unsqueeze(0).to(DEVICE)
+    return torch.tensor(embeddings_dataset[idx]["xvector"]).unsqueeze(0).to(device)
 
 
 def build_target_string(tokens, slot_tags, intent):
@@ -66,6 +66,7 @@ def add_gaussian_noise(speech, snr_db):
 def apply_simple_reverb(speech, decay=0.3, delay_samples=800):
     reverb = np.zeros_like(speech)
     if delay_samples < len(speech):
+        # splice speech after delay_samples and set it equal to the decay of that delayed sample
         reverb[delay_samples:] = speech[:-delay_samples] * decay
     return speech + reverb
 
@@ -112,7 +113,7 @@ def synthesize_split(jsonl_path, out_dir, limit=None):
         target_string = build_target_string(tokens, slot_tags, intent)
 
         speaker_embedding = random_speaker_embedding()
-        inputs = tts_processor(text=sentence, return_tensors="pt").to(DEVICE)
+        inputs = tts_processor(text=sentence, return_tensors="pt").to(device)
 
         with torch.no_grad():
             speech = tts_model.generate_speech(
@@ -125,7 +126,7 @@ def synthesize_split(jsonl_path, out_dir, limit=None):
 
         mel_features = whisper_fe(
             speech_np, sampling_rate=16000, return_tensors="pt"
-        ).input_features.squeeze(0)  # shape: [n_mels, 3000] -- Whisper's fixed 30s window
+        ).input_features.squeeze(0)  # shape: [n_mels, 3000]
 
 
         sample_dir = os.path.join(out_dir, str(i))
@@ -147,6 +148,6 @@ def synthesize_split(jsonl_path, out_dir, limit=None):
 
 
 if __name__ == "__main__":
-    synthesize_split("nlu/data/snips_processed/train.jsonl", "synthetic_data/train")
-    synthesize_split("nlu/data/snips_processed/valid.jsonl", "synthetic_data/valid")
-    synthesize_split("nlu/data/snips_processed/test.jsonl", "synthetic_data/test")
+    synthesize_split("snips_processed/train.jsonl", "synthetic_data/train")
+    synthesize_split("snips_processed/valid.jsonl", "synthetic_data/valid")
+    synthesize_split("snips_processed/test.jsonl", "synthetic_data/test")
